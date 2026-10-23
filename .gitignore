@@ -1,0 +1,13 @@
+/.lake
+/TheoremA/.lake
+/TheoremA/NewWorkflow.txt
+.DS_Store
+/paper.tex
+/3rd paper.tex
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+/paper.pdf

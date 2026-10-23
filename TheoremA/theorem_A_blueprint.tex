@@ -1,0 +1,925 @@
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage[margin=1in]{geometry}
+\usepackage[hidelinks]{hyperref}
+
+%======================================================================
+%  Blueprint metadata macros.
+%
+%  This file is written so that another tool/LLM can turn it into a
+%  `leanblueprint` document and drive auto-formalization.
+%
+%  * \uses{lab1,lab2,...}  records the dependency edges (the blueprint DAG).
+%  * \leanname{Ident}      records the *intended* Lean declaration name
+%                          (metadata only -- NOT Lean code). The names of the
+%                          three core definitions and of the final theorem are
+%                          FIXED by `Showcase_ThmA.lean` and must be reused
+%                          verbatim; all other names are suggestions.
+%  * \mlib{Name}           marks a fact that is already in Mathlib (a DAG leaf,
+%                          i.e. `\leanok` from the start).
+%
+%  To build the real blueprint, replace these three definitions by the
+%  blueprint package's own \uses / \lean / \leanok, or keep them: they are
+%  compile-safe on their own.
+%======================================================================
+\newcommand{\uses}[1]{\par\smallskip{\normalfont\scriptsize$\vdash$\ \textsf{Uses:} \texttt{\detokenize{#1}}}}
+\newcommand{\leanname}[1]{\ {\normalfont\scriptsize[\textsf{Lean:} \texttt{#1}]}}
+\newcommand{\mlib}[1]{{\normalfont\scriptsize[\textsf{Mathlib:} \texttt{#1}]}}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{construction}[definition]{Construction}
+\newtheorem{convention}[definition]{Convention}
+\theoremstyle{plain}
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{corollary}[definition]{Corollary}
+\newtheorem{fact}[definition]{Imported fact}
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\norm}[1]{\lVert #1\rVert}
+\newcommand{\abs}[1]{\lvert #1\rvert}
+\newcommand{\pos}[1]{{#1}^{+}}
+\newcommand{\Xp}{X_{+}}
+\newcommand{\sotends}{\xrightarrow{\sigma o}}
+\newcommand{\dzero}{\mathbin{\downarrow}0}
+\newcommand{\act}{\cdot}
+\newcommand{\Xrho}{X_{\rho}}
+\newcommand{\bigmeet}{\bigwedge}
+\newcommand{\bigjoin}{\bigvee}
+
+\title{Theorem A ($\sigma$-order form) --- Lean-friendly blueprint edition}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This is a refactoring of the proof of Theorem A into atomic, separately
+formalizable statements, annotated with an explicit dependency graph
+(\texttt{\char`\\uses}), intended Lean identifiers (\texttt{[Lean: \dots]}),
+and the Mathlib results each step relies on (\texttt{[Mathlib: \dots]}).
+It is meant to be handed to a blueprint builder / auto-formalization agent.
+The mathematics is unchanged from the source note; only the packaging is new.
+No Lean code appears here.
+\end{abstract}
+
+\tableofcontents
+
+%======================================================================
+\section{How to read this document}
+%======================================================================
+
+Each numbered block is one intended Lean declaration. A block's
+\texttt{\char`\\uses} line lists the labels of the blocks it depends on; together
+these lines are the blueprint DAG. Blocks marked \emph{Imported fact} are
+already available in Mathlib (verified against Mathlib commit
+\texttt{d90090f647}, Lean \texttt{v4.31.0-rc2}) and should be treated as leaves.
+
+\paragraph{Two things that are not off-the-shelf.}
+\begin{itemize}[leftmargin=1.5em]
+\item Lemma~\ref{lem:abs_smul} (\(\abs{\alpha \act x}=\abs{\alpha}\act\abs{x}\) on a
+      \emph{non-linearly-ordered} vector lattice) is the \emph{only} genuinely
+      missing Mathlib lemma. A complete elementary proof is given
+      (Lemma~\ref{lem:smul_sup_nonneg} + Lemma~\ref{lem:abs_smul}).
+\item The auxiliary norm \(\rho\) must live on a \emph{second} normed structure
+      over the same vector space (Construction~\ref{con:Xrho}); Lean cannot carry
+      two \texttt{NormedAddCommGroup} instances on one type, so a type synonym is
+      unavoidable. This is standard packaging, not new theory.
+\end{itemize}
+
+\begin{convention}[Indexing and notation]\label{conv:index}
+All sequences are indexed by \(\N=\{0,1,2,\dots\}\). For a scalar sequence
+\(a:\N\to\R\) the \(m\)-th partial sum is
+\[
+  s_m(a)\;=\;\sum_{k=0}^{m} a_k e_k
+  \qquad\text{(Lean: \(\textstyle\sum_{k\in\mathrm{range}(m+1)} a_k\act e_k\)).}
+\]
+``\(\forall^{\infty} n\)'' means ``for all sufficiently large \(n\)''
+(Lean: \(\exists n_0,\ \forall n\ge n_0\)). \(\Xp=\{x\in X: 0\le x\}\).
+The absolute value is \(\abs{x}=x\vee(-x)\) and the positive part is
+\(\pos{x}=x\vee 0\). Scalar action of \(\alpha\in\R\) on \(x\in X\) is written
+\(\alpha\act x\) (Lean: \(\alpha\act x\)).
+\end{convention}
+
+\begin{remark}[The ambient structure]\label{rem:structure}
+Throughout, \(X\) is a Banach lattice, encoded exactly as in
+\texttt{Showcase\_ThmA.lean} by the instance bundle
+\[
+  \texttt{NormedAddCommGroup } X,\ \texttt{Lattice } X,\
+  \texttt{HasSolidNorm } X,\ \texttt{IsOrderedAddMonoid } X,
+\]
+\[
+  \texttt{NormedSpace } \R\, X,\ \texttt{PosSMulMono } \R\, X,\
+  \texttt{CompleteSpace } X .
+\]
+This is precisely Mathlib's normed-lattice setting together with a real module
+whose positive scalars act monotonically, plus completeness. All ``Imported
+fact'' blocks below hold for this exact bundle.
+\end{remark}
+
+%======================================================================
+\section{Imported facts from Mathlib (DAG leaves)}\label{sec:mathlib}
+%======================================================================
+
+These require no proof; they fix the names the formalization should call.
+
+\begin{fact}[Solid norm is monotone]\label{fact:solid}
+\mlib{norm\_le\_norm\_of\_abs\_le\_abs, HasSolidNorm.solid}
+For \(a,b\in X\), \(\abs{a}\le\abs{b}\Rightarrow \norm{a}\le\norm{b}\); also
+\(\norm{\,\abs{a}\,}=\norm{a}\) (\mlib{norm\_abs\_eq\_norm}). In particular
+\(0\le a\le b\Rightarrow \norm{a}\le\norm{b}\).
+\end{fact}
+
+\begin{fact}[Order topology is closed]\label{fact:orderclosed}
+\mlib{HasSolidNorm.orderClosedTopology}
+\(X\) has \texttt{OrderClosedTopology}: for \(a\in X\) the sets
+\(\{y:y\le a\}\), \(\{y:a\le y\}\) and \([-a,a]\) are norm-closed. Consequently,
+if \(y_i\to y\) in norm and \(y_i\le a\) for all \(i\), then \(y\le a\)
+(\mlib{le\_of\_tendsto', ge\_of\_tendsto', isClosed\_Icc}).
+\end{fact}
+
+\begin{fact}[Continuity of the lattice maps]\label{fact:contabs}
+\mlib{continuous\_posPart, continuous\_negPart, HasSolidNorm.continuousSup}
+The maps \(x\mapsto\pos{x}\), \(x\mapsto x^-\), \(x\mapsto\abs{x}\),
+\(\vee\), \(\wedge\) are norm-continuous.
+\end{fact}
+
+\begin{fact}[Lattice-ordered group algebra]\label{fact:absgroup}
+\mlib{abs\_add\_le, le\_abs\_self, neg\_abs\_le, abs\_le, abs\_nonneg, abs\_neg, posPart\_nonneg, posPart\_eq\_zero}
+For \(a,b\in X\): \(\abs{a+b}\le\abs{a}+\abs{b}\); \(a\le\abs{a}\);
+\(\abs{a}\le b \Leftrightarrow -b\le a\le b\); \(0\le\abs{a}\); \(\abs{-a}=\abs{a}\);
+\(0\le\pos{a}\); and \(\pos{a}=0 \Leftrightarrow a\le 0\).
+(All valid for the non-linear lattice-ordered group \(X\).)
+\end{fact}
+
+\begin{fact}[Monotone positive scalar action]\label{fact:possmul}
+\mlib{PosSMulMono, monotone\_smul\_left\_of\_nonneg, smul\_nonneg}
+For \(0\le\alpha\) and \(a\le b\): \(\alpha\act a\le\alpha\act b\); and
+\(0\le\alpha,\ 0\le a\Rightarrow 0\le\alpha\act a\).
+\end{fact}
+
+\begin{fact}[Absolutely convergent series and tails]\label{fact:series}
+\mlib{Summable.of\_norm, tsum\_nonneg, tsum\_eq\_zero\_add, tendsto\_sum\_nat\_add}
+If \(\sum_r\norm{v_r}<\infty\) then \(\sum_r v_r\) converges in the Banach space
+\(X\); if moreover \(v_r\ge 0\) then \(\sum_{r\ge R} v_r\ge 0\),
+\(\sum_{r\ge R}v_r = v_R+\sum_{r\ge R+1}v_r\), and
+\(\norm{\sum_{r\ge R}v_r}\to 0\) as \(R\to\infty\).
+\end{fact}
+
+\begin{fact}[Real infima]\label{fact:csinf}
+\mlib{csInf\_le, le\_csInf, Real.sInf\_nonneg}
+For a nonempty \(S\subseteq\R\) bounded below: \(\inf S\le s\) for \(s\in S\),
+and \(c\le\inf S\) iff \(c\) is a lower bound.
+\end{fact}
+
+\begin{fact}[Finite lattice sup/inf are least/greatest bounds]\label{fact:finset}
+\mlib{Finset.le\_sup', Finset.sup'\_le, Finset.le\_inf', Finset.inf'\_le, Finset.inf'\_mono}
+For a nonempty finite family, \(\bigjoin\) is its least upper bound and
+\(\bigmeet\) its greatest lower bound, both monotone in the family.
+\end{fact}
+
+\begin{fact}[Finite-dimensional subspaces]\label{fact:findim}
+\mlib{Submodule.closed\_of\_finiteDimensional, LinearMap.continuous\_of\_finiteDimensional, Basis.mk, LinearIndependent}
+A finite-dimensional subspace of \(X\) is norm-closed; every linear map out of a
+finite-dimensional normed space is continuous; a finite linearly independent
+family is a basis of its span, giving continuous coordinate maps.
+\end{fact}
+
+\begin{fact}[Norm from a norm-core; bounded inverse theorem]\label{fact:banach}
+\mlib{NormedAddCommGroup.ofCore, AddGroupNorm.toNormedAddCommGroup, LinearMap.mkContinuous, ContinuousLinearEquiv.ofBijective, ContinuousLinearMap.le\_opNorm}
+A function satisfying the norm axioms induces a \texttt{NormedAddCommGroup}. If
+\(E\) is a Banach space and \(f:E\to F\) is a continuous linear bijection onto a
+normed space \(F\), then \(f^{-1}\) is continuous (\texttt{ofBijective} with
+\(\ker f=\bot\), \(\operatorname{range}f=\top\)); \(\norm{f^{-1}y}\le\norm{f^{-1}}\,\norm{y}\).
+\end{fact}
+
+\begin{fact}[Completeness via absolute convergence]\label{fact:completecrit}
+\mlib{completeSpace criterion: ``summable-in-norm $\Rightarrow$ has-sum'' (e.g.\ via \texttt{Metric.complete\_of\_cauchySeq\_tendsto} or the normed-group series criterion)}
+A normed space is complete once every norm-summable series converges. Used in
+Proposition~\ref{prop:rho_complete}; an equivalent self-contained subsequence
+argument is described there.
+\end{fact}
+
+%======================================================================
+\section{Preliminaries I: scalars versus the lattice}\label{sec:scalars}
+%======================================================================
+
+This section supplies the one lemma missing from Mathlib and its helper.
+
+\begin{lemma}[Positive scalars distribute over joins]\label{lem:smul_sup_nonneg}
+\leanname{smul\_sup\_of\_nonneg}
+For \(\alpha\in\R\) with \(0\le\alpha\) and \(a,b\in X\),
+\(\alpha\act(a\vee b)=(\alpha\act a)\vee(\alpha\act b)\).
+\uses{fact:possmul}
+\end{lemma}
+\begin{proof}
+Write \((\ast_d)\) for the one-sided inequality
+\((d\act p)\vee(d\act q)\le d\act(p\vee q)\), valid for \(0\le d\): indeed
+\(p\le p\vee q\) gives \(d\act p\le d\act(p\vee q)\) by Fact~\ref{fact:possmul},
+similarly for \(q\), and take the join.
+
+Applying \((\ast_\alpha)\) gives ``\(\ge\)'' of the claim (i.e.\ \((\alpha\act a)\vee(\alpha\act b)\le\alpha\act(a\vee b)\)).
+For ``\(\le\)'': if \(\alpha=0\) both sides are \(0\). If \(\alpha>0\), apply
+\((\ast_{\alpha^{-1}})\) to \(p=\alpha\act a,\ q=\alpha\act b\):
+\((\alpha^{-1}\act(\alpha\act a))\vee(\alpha^{-1}\act(\alpha\act b))\le
+\alpha^{-1}\act\big((\alpha\act a)\vee(\alpha\act b)\big)\),
+whose left side is \(a\vee b\). Act by \(\alpha\ge 0\) (monotone) and use
+\(\alpha\act(\alpha^{-1}\act y)=y\):
+\(\alpha\act(a\vee b)\le(\alpha\act a)\vee(\alpha\act b)\).
+\end{proof}
+
+\begin{lemma}[Absolute value is scalar-homogeneous]\label{lem:abs_smul}
+\leanname{abs\_smul\_vectorLattice}
+For all \(\alpha\in\R\) and \(x\in X\), \(\abs{\alpha\act x}=\abs{\alpha}\act\abs{x}\).
+\uses{lem:smul_sup_nonneg,fact:absgroup}
+\end{lemma}
+\begin{proof}
+If \(\alpha\ge 0\): using \(-(\alpha\act x)=\alpha\act(-x)\) and
+Lemma~\ref{lem:smul_sup_nonneg},
+\[
+  \abs{\alpha\act x}=(\alpha\act x)\vee(\alpha\act(-x))
+  =\alpha\act\big(x\vee(-x)\big)=\alpha\act\abs{x}=\abs{\alpha}\act\abs{x}.
+\]
+If \(\alpha\le 0\): put \(d=-\alpha\ge 0\); then \(\alpha\act x=-(d\act x)\), so
+\(\abs{\alpha\act x}=\abs{d\act x}=d\act\abs{x}=\abs{\alpha}\act\abs{x}\) using
+\(\abs{-y}=\abs{y}\) and the previous case.
+\end{proof}
+
+\begin{remark}\label{rem:gap}
+Mathlib's \texttt{abs\_smul} and \texttt{smul\_max\_of\_nonneg} require
+\texttt{LinearOrder} on the module, which fails for a general Banach lattice; for
+general lattices Mathlib supplies only the one-sided \texttt{smul\_inf\_le}. Hence
+Lemmas~\ref{lem:smul_sup_nonneg}--\ref{lem:abs_smul} are the sole pieces of new
+theory required.
+\end{remark}
+
+%======================================================================
+\section{Preliminaries II: regulators (the calculus of \texorpdfstring{$z\dzero$}{z down 0})}\label{sec:reg}
+%======================================================================
+
+\begin{definition}[Regulator, \(z\dzero\)]\label{def:downto}
+\leanname{DownToZero}
+A sequence \(z:\N\to X\) is a \emph{regulator} (written \(z\dzero\)) if
+(i) \(0\le z_m\) for all \(m\); (ii) \(z_{m+1}\le z_m\) for all \(m\); and
+(iii) whenever \(0\le h\) and \(h\le z_m\) for all \(m\), then \(h=0\).
+\end{definition}
+
+\begin{lemma}[Zero is a regulator]\label{lem:reg_zero}
+\leanname{downToZero\_zero}
+The constant sequence \(0\) satisfies \(0\dzero\).
+\uses{def:downto}
+\end{lemma}
+\begin{proof}
+(i),(ii) are trivial. For (iii): \(0\le h\le 0\) forces \(h=0\) by antisymmetry.
+\end{proof}
+
+\begin{lemma}[Regulators are closed under addition]\label{lem:reg_add}
+\leanname{DownToZero.add}
+If \(z\dzero\) and \(w\dzero\) then \((z_m+w_m)_m\dzero\).
+\uses{def:downto,fact:absgroup}
+\end{lemma}
+\begin{proof}
+Positivity and monotonicity are termwise (add nonnegatives; add the two
+decrease inequalities). For (iii), suppose \(0\le h\le z_m+w_m\) for all \(m\).
+Fix \(M\). For every \(m\ge M\), monotonicity of \(z\) gives
+\(h\le z_M+w_m\), i.e.\ \(h-z_M\le w_m\); since also \(0\le w_m\) we get
+\(\pos{(h-z_M)}\le w_m\). For \(m<M\), \(w_m\ge w_M\ge \pos{(h-z_M)}\), so in fact
+\(\pos{(h-z_M)}\le w_m\) for \emph{all} \(m\). As \(w\dzero\) and
+\(\pos{(h-z_M)}\ge 0\), we get \(\pos{(h-z_M)}=0\), i.e.\ \(h\le z_M\)
+(Fact~\ref{fact:absgroup}, \texttt{posPart\_eq\_zero}). This holds for every \(M\)
+and \(h\ge0\), so \(h=0\) since \(z\dzero\).
+\end{proof}
+
+\begin{lemma}[Regulators are closed under scaling]\label{lem:reg_smul}
+\leanname{DownToZero.smul}
+If \(z\dzero\) and \(\alpha\in\R\), then \((\abs{\alpha}\act z_m)_m\dzero\).
+\uses{def:downto,lem:reg_zero,fact:possmul}
+\end{lemma}
+\begin{proof}
+Positivity and monotonicity follow from Fact~\ref{fact:possmul}
+(\(\abs{\alpha}\ge0\)). If \(\alpha=0\) the sequence is \(0\), covered by
+Lemma~\ref{lem:reg_zero}. If \(\alpha\neq0\), let \(0\le h\le\abs{\alpha}\act z_m\)
+for all \(m\). Acting by \(\abs{\alpha}^{-1}\ge0\) gives
+\(0\le\abs{\alpha}^{-1}\act h\le z_m\) for all \(m\); since \(z\dzero\),
+\(\abs{\alpha}^{-1}\act h=0\), hence \(h=\abs{\alpha}\act(\abs{\alpha}^{-1}\act h)=0\).
+\end{proof}
+
+\begin{lemma}[Diagonal regulator]\label{lem:diagonal}
+\leanname{sigmaOrderTendsto\_of\_diagonal}
+Let \(y:\N\to X\) and \(x\in X\). Suppose there are
+\begin{enumerate}[label=(\alph*),leftmargin=2.2em]
+\item \(c:\N\to X\) with \(c\dzero\); and
+\item for each \(R\), a regulator \(w^{R}\dzero\);
+\end{enumerate}
+such that for all \(R,j\) one has \(\abs{y_m-x}\le c_R+w^{R}_{j}\) for all
+sufficiently large \(m\). Then \(y_m\sotends x\) (Definition~\ref{def:sigo}).
+\uses{def:downto,def:sigo,lem:reg_add,fact:absgroup,fact:finset}
+\end{lemma}
+\begin{proof}
+Define \(b_j=\bigmeet_{R=0}^{j}\big(c_R+w^{R}_{j}\big)\).
+
+\emph{Positivity/monotonicity.} Each \(c_R+w^R_j\ge0\), so \(b_j\ge0\)
+(Fact~\ref{fact:finset}). For monotonicity, since \(w^R_{j+1}\le w^R_j\), each
+term of \(b_{j+1}\) with \(R\le j\) is \(\le\) the corresponding term of \(b_j\),
+and \(b_{j+1}\) has one extra term; hence \(b_{j+1}\le b_j\)
+(Fact~\ref{fact:finset}).
+
+\emph{The bound.} Fix \(j\). By hypothesis, for each \(R\in\{0,\dots,j\}\) there is
+\(m_0(R)\) beyond which \(\abs{y_m-x}\le c_R+w^R_j\); for \(m\ge\max_R m_0(R)\) all
+these hold, so \(\abs{y_m-x}\le b_j\) (greatest lower bound, Fact~\ref{fact:finset}).
+
+\emph{\(b\dzero\).} Suppose \(0\le h\le b_j\) for all \(j\). Fix \(R\). For \(j\ge R\),
+\(b_j\le c_R+w^R_j\), so \(h\le c_R+w^R_j\), giving \(\pos{(h-c_R)}\le w^R_j\) for
+\(j\ge R\), hence (monotonicity of \(w^R\)) for all \(j\). As \(w^R\dzero\),
+\(\pos{(h-c_R)}=0\), i.e.\ \(h\le c_R\); true for all \(R\), so \(h=0\) since
+\(c\dzero\). Thus \(b\dzero\) and it regulates \(y_m\sotends x\).
+\end{proof}
+
+%======================================================================
+\section{\texorpdfstring{$\sigma$}{sigma}-order convergence (basic calculus)}\label{sec:so}
+%======================================================================
+
+\begin{definition}[\(\sigma\)-order convergence]\label{def:sigo}
+\leanname{SigmaOrderTendsto}
+\(x:\N\to X\) \emph{\(\sigma\)-order converges} to \(x_0\), written \(x_n\sotends x_0\),
+if there is a regulator \(z\dzero\) with
+\(\forall m,\ \forall^{\infty} n,\ \abs{x_n-x_0}\le z_m\).
+\uses{def:downto}
+\end{definition}
+
+\begin{lemma}[Eventually constant \(\Rightarrow\) converges]\label{lem:so_eventuallyEq}
+\leanname{sigmaOrderTendsto\_of\_eventuallyEq}
+If \(\forall^{\infty} n,\ x_n=x_0\), then \(x_n\sotends x_0\).
+\uses{def:sigo,lem:reg_zero}
+\end{lemma}
+\begin{proof}
+Use the regulator \(0\) (Lemma~\ref{lem:reg_zero}); for each \(m\), eventually
+\(\abs{x_n-x_0}=0\le 0\).
+\end{proof}
+
+\begin{lemma}[Additivity]\label{lem:so_add}
+\leanname{SigmaOrderTendsto.add}
+If \(x_n\sotends x\) and \(y_n\sotends y\), then \(x_n+y_n\sotends x+y\).
+\uses{def:sigo,lem:reg_add,fact:absgroup}
+\end{lemma}
+\begin{proof}
+Let \(z,w\) be regulators for \(x,y\). By Lemma~\ref{lem:reg_add}, \(z+w\dzero\).
+For each \(m\), on the eventual set where both
+\(\abs{x_n-x}\le z_m\) and \(\abs{y_n-y}\le w_m\) hold,
+\(\abs{(x_n+y_n)-(x+y)}\le\abs{x_n-x}+\abs{y_n-y}\le z_m+w_m\).
+\end{proof}
+
+\begin{lemma}[Homogeneity]\label{lem:so_smul}
+\leanname{SigmaOrderTendsto.smul}
+If \(x_n\sotends x\) and \(\alpha\in\R\), then \(\alpha\act x_n\sotends \alpha\act x\).
+\uses{def:sigo,lem:reg_smul,lem:abs_smul,fact:possmul}
+\end{lemma}
+\begin{proof}
+Let \(z\dzero\) regulate \(x\). By Lemma~\ref{lem:reg_smul},
+\((\abs{\alpha}\act z_m)_m\dzero\). For each \(m\), eventually
+\(\abs{\alpha\act x_n-\alpha\act x}=\abs{\alpha\act(x_n-x)}
+=\abs{\alpha}\act\abs{x_n-x}\le\abs{\alpha}\act z_m\)
+by Lemma~\ref{lem:abs_smul} and Fact~\ref{fact:possmul}.
+\end{proof}
+
+\begin{lemma}[\(\sigma\)-order limits are order bounded]\label{lem:so_bounded}
+\leanname{SigmaOrderTendsto.orderBounded}
+If \(x_n\sotends x\), then there is \(u\in\Xp\) with \(\abs{x_n}\le u\) for all \(n\).
+\uses{def:sigo,fact:absgroup,fact:finset}
+\end{lemma}
+\begin{proof}
+Take a regulator \(z\). For \(m=0\) there is \(n_0\) with \(\abs{x_n-x}\le z_0\)
+for \(n\ge n_0\), whence \(\abs{x_n}\le\abs{x}+z_0\) there. Set
+\(u=\big(\bigjoin_{n<n_0}\abs{x_n}\big)\vee(\abs{x}+z_0)\); then \(u\ge0\) and
+\(\abs{x_n}\le u\) for every \(n\) (Fact~\ref{fact:finset}).
+\end{proof}
+
+\begin{lemma}[Order bounds pass to \(\sigma\)-order limits]\label{lem:so_abs_le}
+\leanname{SigmaOrderTendsto.abs\_le}
+If \(x_n\sotends x\), \(u\in\Xp\), and \(\abs{x_n}\le u\) for all \(n\), then
+\(\abs{x}\le u\).
+\uses{def:sigo,fact:absgroup}
+\end{lemma}
+\begin{proof}
+Take a regulator \(z\). For each \(m\), pick \(n\) large with
+\(\abs{x_n-x}\le z_m\); then
+\(\abs{x}\le\abs{x_n}+\abs{x_n-x}\le u+z_m\), so \(\pos{(\abs{x}-u)}\le z_m\).
+Valid for all \(m\), so \(\pos{(\abs{x}-u)}=0\) (\(z\dzero\)), i.e.\ \(\abs{x}\le u\).
+\end{proof}
+
+\begin{lemma}[Order bounds pass to \emph{norm} limits]\label{lem:norm_limit_abs_le}
+\leanname{abs\_le\_of\_tendsto}
+If \(x_i\to x\) in norm and \(\abs{x_i}\le u\) for all \(i\), then \(\abs{x}\le u\).
+\uses{fact:orderclosed,fact:absgroup}
+\end{lemma}
+\begin{proof}
+\(\abs{x_i}\le u\) means \(-u\le x_i\le u\) (Fact~\ref{fact:absgroup}). Both
+half-spaces are closed (Fact~\ref{fact:orderclosed}); passing to the norm limit
+gives \(-u\le x\le u\), i.e.\ \(\abs{x}\le u\).
+\end{proof}
+
+\begin{lemma}[Tails of a positive summable series form a regulator]\label{lem:reg_tail}
+\leanname{downToZero\_tsum\_tail}
+Let \(u:\N\to X\) with \(u_r\ge0\) and \(\sum_r\norm{u_r}<\infty\), and set
+\(U_R=\sum_{r\ge R} u_r\). Then \((U_R)_R\dzero\).
+\uses{def:downto,fact:series,fact:solid}
+\end{lemma}
+\begin{proof}
+The series converges (Fact~\ref{fact:series}). Then \(U_R\ge0\)
+(\(\mathtt{tsum\_nonneg}\)), \(U_R=u_R+U_{R+1}\ge U_{R+1}\) (so decreasing), and
+\(\norm{U_R}\to0\) (tail of a norm-convergent series). If \(0\le h\le U_R\) for
+all \(R\), then \(\norm{h}\le\norm{U_R}\to0\) (Fact~\ref{fact:solid}), so
+\(\norm{h}=0\) and \(h=0\).
+\end{proof}
+
+%======================================================================
+\section{Coordinates and projections}\label{sec:coord}
+%======================================================================
+
+\begin{definition}[\(\sigma\)-order basis]\label{def:basis}
+\leanname{IsSigmaOrderBasis}
+\((e_n)\) is a \emph{\(\sigma\)-order basis} of \(X\) if for every \(x\in X\)
+there is a unique \(a:\N\to\R\) with \(s_m(a)\sotends x\).
+\uses{def:sigo}
+\end{definition}
+
+\emph{Standing assumption for \S\S\ref{sec:coord}--\ref{sec:max}}: \((e_n)\) is a
+fixed \(\sigma\)-order basis of \(X\).
+
+\begin{construction}[Coordinates and projections]\label{con:coord}
+\leanname{coord, proj}
+For \(x\in X\) let \(a^{x}\) be the unique sequence from Definition~\ref{def:basis}.
+Define the coordinate functionals and projections
+\[
+  e_k^{\#}(x)=a^{x}_k,\qquad
+  P_m x=s_m(a^{x})=\sum_{k=0}^{m} e_k^{\#}(x)\,e_k .
+\]
+\uses{def:basis}
+\end{construction}
+
+\begin{lemma}[Projections \(\sigma\)-order converge]\label{lem:proj_sotends}
+\leanname{proj\_sigmaOrderTendsto}
+For every \(x\), \(P_m x\sotends x\) (as \(m\to\infty\)).
+\uses{con:coord,def:basis}
+\end{lemma}
+\begin{proof}
+Immediate from Construction~\ref{con:coord}: \(P_m x=s_m(a^x)\) and
+\(s_m(a^x)\sotends x\) by choice of \(a^x\).
+\end{proof}
+
+\begin{lemma}[Uniqueness of expansion]\label{lem:coord_unique}
+\leanname{coord\_unique}
+If \(s_m(a)\sotends x\) then \(a=a^{x}\) (equivalently \(a_k=e_k^{\#}(x)\) for all \(k\)).
+\uses{con:coord,def:basis}
+\end{lemma}
+\begin{proof}
+The uniqueness clause of Definition~\ref{def:basis}.
+\end{proof}
+
+\begin{lemma}[Coordinates are additive]\label{lem:coord_add}
+\leanname{coord\_add}
+\(e_k^{\#}(x+y)=e_k^{\#}(x)+e_k^{\#}(y)\) for all \(k\).
+\uses{lem:proj_sotends,lem:so_add,lem:coord_unique}
+\end{lemma}
+\begin{proof}
+\(s_m(a^{x}+a^{y})=s_m(a^{x})+s_m(a^{y})\) (linearity of the finite sum in the
+coefficients) \(\sotends x+y\) by Lemma~\ref{lem:so_add}. By
+Lemma~\ref{lem:coord_unique}, \(a^{x+y}=a^{x}+a^{y}\).
+\end{proof}
+
+\begin{lemma}[Coordinates are homogeneous]\label{lem:coord_smul}
+\leanname{coord\_smul}
+\(e_k^{\#}(\alpha\act x)=\alpha\, e_k^{\#}(x)\) for all \(k\).
+\uses{lem:proj_sotends,lem:so_smul,lem:coord_unique}
+\end{lemma}
+\begin{proof}
+\(s_m(\alpha\, a^{x})=\alpha\act s_m(a^{x})\sotends\alpha\act x\) by
+Lemma~\ref{lem:so_smul}; conclude with Lemma~\ref{lem:coord_unique}.
+\end{proof}
+
+\begin{lemma}[Projections are linear]\label{lem:proj_linear}
+\leanname{proj\_add, proj\_smul}
+\(P_m(x+y)=P_m x+P_m y\) and \(P_m(\alpha\act x)=\alpha\act P_m x\).
+\uses{lem:coord_add,lem:coord_smul}
+\end{lemma}
+\begin{proof}
+Substitute Lemmas~\ref{lem:coord_add}--\ref{lem:coord_smul} into
+\(P_m=\sum_{k=0}^m e_k^{\#}(\cdot)\,e_k\).
+\end{proof}
+
+\begin{lemma}[The basis vectors are linearly independent]\label{lem:e_indep}
+\leanname{e\_linearIndependent}
+The family \((e_n)\) is linearly independent.
+\uses{con:coord,lem:so_eventuallyEq,lem:coord_unique}
+\end{lemma}
+\begin{proof}
+Suppose \(\sum_{k=0}^{N} a_k e_k=0\). Let \(\hat a\) extend \((a_0,\dots,a_N)\)
+by zeros. Then \(s_m(\hat a)=0\) for all \(m\ge N\), so
+\(s_m(\hat a)\sotends 0\) (Lemma~\ref{lem:so_eventuallyEq}). Also the zero
+sequence gives \(s_m(0)=0\sotends 0\). By uniqueness
+(Lemma~\ref{lem:coord_unique}) \(\hat a=0\), i.e.\ every \(a_k=0\).
+\end{proof}
+
+%======================================================================
+\section{The auxiliary norm \texorpdfstring{$\rho$}{rho}}\label{sec:rho}
+%======================================================================
+
+\begin{construction}[The functional \(\rho\)]\label{con:rho}
+\leanname{rho}
+For \(x\in X\) set
+\[
+  A(x)=\{\,u\in\Xp : \abs{P_m x}\le u \text{ for every } m\in\N\,\},
+  \qquad
+  \rho(x)=\inf\{\norm{u}: u\in A(x)\}.
+\]
+\uses{con:coord}
+\end{construction}
+
+\begin{lemma}[\(A(x)\) is nonempty and \(\rho\) is well defined]\label{lem:rho_wd}
+\leanname{rho\_admissible\_nonempty}
+\(A(x)\neq\varnothing\); hence \(\rho(x)\) is a well-defined nonnegative real.
+\uses{con:rho,lem:proj_sotends,lem:so_bounded,fact:csinf}
+\end{lemma}
+\begin{proof}
+\(P_m x\sotends x\) (Lemma~\ref{lem:proj_sotends}), so
+Lemma~\ref{lem:so_bounded} yields \(u\ge0\) with \(\abs{P_m x}\le u\) for all
+\(m\), i.e.\ \(u\in A(x)\). The set \(\{\norm{u}:u\in A(x)\}\) is nonempty and
+bounded below by \(0\), so \(\rho(x)\ge0\) exists (Fact~\ref{fact:csinf}).
+\end{proof}
+
+\begin{lemma}[\(\rho\) dominates the norm]\label{lem:norm_le_rho}
+\leanname{norm\_le\_rho}
+\(\norm{x}\le\rho(x)\) for all \(x\).
+\uses{con:rho,lem:proj_sotends,lem:so_abs_le,fact:solid,fact:csinf}
+\end{lemma}
+\begin{proof}
+For \(u\in A(x)\): since \(P_m x\sotends x\) and \(\abs{P_m x}\le u\),
+Lemma~\ref{lem:so_abs_le} gives \(\abs{x}\le u\), so \(\norm{x}\le\norm{u}\)
+(Fact~\ref{fact:solid}). Thus \(\norm{x}\) is a lower bound of
+\(\{\norm{u}:u\in A(x)\}\), whence \(\norm{x}\le\rho(x)\) (Fact~\ref{fact:csinf}).
+\end{proof}
+
+\begin{lemma}[\(\varepsilon\)-approximation of \(\rho\)]\label{lem:rho_approx}
+\leanname{rho\_approx}
+For \(x\in X\) and \(\varepsilon>0\), there is \(u\in A(x)\) with
+\(\norm{u}\le\rho(x)+\varepsilon\).
+\uses{con:rho,lem:rho_wd,fact:csinf}
+\end{lemma}
+\begin{proof}
+Definition of infimum (Fact~\ref{fact:csinf}) on the nonempty set of
+Lemma~\ref{lem:rho_wd}.
+\end{proof}
+
+\begin{lemma}[Homogeneity of \(\rho\)]\label{lem:rho_smul}
+\leanname{rho\_smul}
+\(\rho(\alpha\act x)=\abs{\alpha}\,\rho(x)\).
+\uses{con:rho,lem:proj_linear,lem:abs_smul,fact:possmul}
+\end{lemma}
+\begin{proof}
+If \(\alpha=0\), \(A(0)\ni0\) and \(\rho(0)=0\). If \(\alpha\neq0\): using
+\(P_m(\alpha\act x)=\alpha\act P_m x\) (Lemma~\ref{lem:proj_linear}) and
+\(\abs{\alpha\act P_m x}=\abs{\alpha}\act\abs{P_m x}\)
+(Lemma~\ref{lem:abs_smul}), the map \(u\mapsto\abs{\alpha}\act u\) is a bijection
+\(A(x)\to A(\alpha\act x)\) with \(\norm{\abs{\alpha}\act u}=\abs{\alpha}\norm{u}\).
+Taking infima gives \(\rho(\alpha\act x)=\abs{\alpha}\rho(x)\).
+\end{proof}
+
+\begin{lemma}[Subadditivity of \(\rho\)]\label{lem:rho_add}
+\leanname{rho\_add\_le}
+\(\rho(x+y)\le\rho(x)+\rho(y)\).
+\uses{con:rho,lem:proj_linear,lem:rho_approx,fact:absgroup,fact:csinf}
+\end{lemma}
+\begin{proof}
+Given \(\varepsilon>0\), pick \(u\in A(x)\), \(v\in A(y)\) with
+\(\norm{u}\le\rho(x)+\varepsilon\), \(\norm{v}\le\rho(y)+\varepsilon\)
+(Lemma~\ref{lem:rho_approx}). Then \(u+v\ge0\) and, by
+Lemma~\ref{lem:proj_linear} and Fact~\ref{fact:absgroup},
+\(\abs{P_m(x+y)}=\abs{P_m x+P_m y}\le\abs{P_m x}+\abs{P_m y}\le u+v\),
+so \(u+v\in A(x+y)\). Hence
+\(\rho(x+y)\le\norm{u+v}\le\norm{u}+\norm{v}\le\rho(x)+\rho(y)+2\varepsilon\).
+Let \(\varepsilon\to0\).
+\end{proof}
+
+\begin{lemma}[\(\rho\) is positive definite]\label{lem:rho_zero}
+\leanname{rho\_eq\_zero\_iff}
+\(\rho(x)=0\) iff \(x=0\).
+\uses{con:rho,lem:norm_le_rho}
+\end{lemma}
+\begin{proof}
+\(\rho(0)=0\) since \(0\in A(0)\). Conversely \(\norm{x}\le\rho(x)=0\)
+(Lemma~\ref{lem:norm_le_rho}) forces \(x=0\).
+\end{proof}
+
+\begin{construction}[The normed space \((X,\rho)\)]\label{con:Xrho}
+\leanname{Xrho (type synonym), instances NormedAddCommGroup / NormedSpace}
+By Lemmas~\ref{lem:rho_smul}, \ref{lem:rho_add}, \ref{lem:rho_zero}, \(\rho\) is a
+norm. Let \(\Xrho\) denote the vector space \(X\) equipped with \(\rho\) (a type
+synonym carrying the same additive and \(\R\)-module structure). It is a normed
+\(\R\)-space, and the set-theoretic identity \(\iota:\Xrho\to X\) is linear.
+\uses{lem:rho_smul,lem:rho_add,lem:rho_zero,fact:banach}
+\end{construction}
+
+%======================================================================
+\section{Completeness of \texorpdfstring{$(X,\rho)$}{(X,rho)}}\label{sec:complete}
+%======================================================================
+
+The heart of the argument. We first isolate the finite-dimensional step, then
+prove that norm-summable series converge in \(\rho\), then conclude completeness.
+
+\begin{lemma}[A compatible tower of finite sections is the projection tower]\label{lem:tower_eq_proj}
+\leanname{proj\_of\_compatible\_tower}
+Let \(x\in X\) and \(y:\N\to X\) satisfy
+\begin{enumerate}[label=(\roman*),leftmargin=2.2em]
+\item \(y_m\in E_m:=\operatorname{span}\{e_0,\dots,e_m\}\) for all \(m\);
+\item \(Q_m y_{m+1}=y_m\), where \(Q_m:E_{m+1}\to E_m\) is the truncation
+      \(\sum_{k=0}^{m+1} c_k e_k\mapsto\sum_{k=0}^{m} c_k e_k\); and
+\item \(y_m\sotends x\).
+\end{enumerate}
+Then \(y_m=P_m x\) for all \(m\).
+\uses{lem:e_indep,lem:coord_unique,fact:findim}
+\end{lemma}
+\begin{proof}
+By linear independence (Lemma~\ref{lem:e_indep}), each \(y_m\) has unique
+coordinates \(y_m=\sum_{k=0}^m c^{(m)}_k e_k\), and \(Q_m\) is well defined.
+Condition (ii) gives \(c^{(m+1)}_k=c^{(m)}_k\) for \(k\le m\); set
+\(a_k:=c^{(k)}_k\), so \(y_m=s_m(a)\). By (iii) and
+Lemma~\ref{lem:coord_unique}, \(a=a^{x}\), i.e.\ \(y_m=P_m x\).
+\end{proof}
+
+\begin{lemma}[Norm-summable series converge in \(\rho\)]\label{lem:rho_series}
+\leanname{rho\_summable\_of\_rho\_summable}
+Let \((v_r)\subseteq X\) satisfy \(\sum_r\rho(v_r)<\infty\). Then the partial sums
+\(x_R=\sum_{r<R} v_r\) form a \(\rho\)-Cauchy sequence that \(\rho\)-converges;
+concretely there is \(x\) with \(\rho(x-x_R)\to0\).
+\uses{con:rho,lem:rho_approx,lem:norm_le_rho,lem:reg_tail,lem:reg_add,lem:proj_sotends,lem:proj_linear,lem:norm_limit_abs_le,lem:diagonal,lem:tower_eq_proj,fact:series,fact:findim}
+\end{lemma}
+\begin{proof}
+\emph{Step 1 (choose order bounds).} For each \(r\), Lemma~\ref{lem:rho_approx}
+gives \(u_r\in A(v_r)\) with \(\norm{u_r}\le\rho(v_r)+2^{-r}\); thus
+\(\sum_r\norm{u_r}<\infty\), and by Lemma~\ref{lem:norm_le_rho}
+\(\sum_r\norm{v_r}<\infty\). Put
+\[
+  U_R=\sum_{r\ge R}u_r,\qquad T_R=\sum_{r\ge R}\abs{v_r}.
+\]
+By Lemma~\ref{lem:reg_tail}, \(U_R\dzero\) and \(T_R\dzero\) (note \(u_r,\abs{v_r}\ge0\)).
+
+\emph{Step 2 (norm limit \(x\)).} Since \(\sum_r\norm{v_r}<\infty\) and \(X\) is
+Banach, \(x:=\sum_r v_r\) exists in norm and \(x_R\to x\). For \(S>R\),
+\(\abs{x_S-x_R}\le\sum_{r=R}^{S-1}\abs{v_r}\le T_R\); letting \(S\to\infty\),
+Lemma~\ref{lem:norm_limit_abs_le} gives \(\abs{x-x_R}\le T_R\).
+
+\emph{Step 3 (norm limits \(y_m\)).} Fix \(m\). For \(S>R\),
+\(\abs{P_m x_S-P_m x_R}\le\sum_{r=R}^{S-1}\abs{P_m v_r}\le U_R\)
+(Lemma~\ref{lem:proj_linear} and \(u_r\in A(v_r)\)); so \((P_m x_R)_R\) is norm
+Cauchy. Let \(y_m=\lim_R P_m x_R\); then \(\abs{y_m-P_m x_R}\le U_R\) for all
+\(m,R\) (Lemma~\ref{lem:norm_limit_abs_le}).
+
+\emph{Step 4 (\(y_m\sotends x\)).} Fix \(R\). As \(P_m x_R\sotends x_R\)
+(Lemma~\ref{lem:proj_sotends}) with some regulator \(w^{R}\dzero\), for each \(j\)
+eventually \(\abs{P_m x_R-x_R}\le w^{R}_j\). Combining Steps 2--3,
+\[
+  \abs{y_m-x}\le\abs{y_m-P_m x_R}+\abs{P_m x_R-x_R}+\abs{x_R-x}
+  \le U_R+T_R+w^{R}_j
+\]
+for all large \(m\). Set \(c_R=U_R+T_R\); then \(c\dzero\)
+(Lemma~\ref{lem:reg_add}). Lemma~\ref{lem:diagonal} yields \(y_m\sotends x\).
+
+\emph{Step 5 (\(y_m=P_m x\)).} Each \(P_m x_R\in E_m\), and \(E_m\) is closed
+(Fact~\ref{fact:findim}), so \(y_m\in E_m\). The truncation \(Q_m\) is continuous
+(finite-dimensional domain, Fact~\ref{fact:findim}) and
+\(Q_m(P_{m+1}x_R)=P_m x_R\); passing to the limit, \(Q_m y_{m+1}=y_m\). With
+Step 4, Lemma~\ref{lem:tower_eq_proj} gives \(y_m=P_m x\).
+
+\emph{Step 6 (conclude).} By Steps 3 and 5,
+\(\abs{P_m(x-x_R)}=\abs{P_m x-P_m x_R}=\abs{y_m-P_m x_R}\le U_R\) for all \(m\), so
+\(U_R\in A(x-x_R)\) and \(\rho(x-x_R)\le\norm{U_R}\to0\) (Step 1). Hence
+\(x_R\to x\) in \(\rho\).
+\end{proof}
+
+\begin{proposition}[\((X,\rho)\) is complete]\label{prop:rho_complete}
+\leanname{instCompleteSpace\_Xrho}
+\(\Xrho\) is a Banach space.
+\uses{con:Xrho,lem:rho_series,fact:completecrit}
+\end{proposition}
+\begin{proof}
+By Lemma~\ref{lem:rho_series} every \(\rho\)-norm-summable series converges in
+\(\rho\); this is exactly the criterion of Fact~\ref{fact:completecrit}, so
+\(\Xrho\) is complete.
+
+\emph{Self-contained alternative} (matching the source note): a \(\rho\)-Cauchy
+sequence has a subsequence \((x_r)\) with \(\sum_r\rho(x_{r+1}-x_r)<\infty\);
+apply Lemma~\ref{lem:rho_series} to \(v_r=x_{r+1}-x_r\) to converge that
+subsequence, and a Cauchy sequence with a convergent subsequence converges.
+\end{proof}
+
+%======================================================================
+\section{The maximal inequality (Theorem A)}\label{sec:max}
+%======================================================================
+
+\begin{lemma}[Projections of a finite combination]\label{lem:proj_finite}
+\leanname{proj\_of\_finite}
+Fix \(N\ge1\), \(a:\N\to\R\), and put \(x=\sum_{k=0}^{N-1} a_k e_k\). Let
+\(\hat a_k=a_k\) for \(k<N\) and \(\hat a_k=0\) otherwise. Then
+\(a^{x}=\hat a\), and for all \(m\),
+\[
+  P_m x=\sum_{k=0}^{\min(m,N-1)} a_k e_k .
+\]
+In particular \(P_m x=s_m(a)\) for \(m\le N-1\) and \(P_m x=x\) for \(m\ge N-1\).
+\uses{con:coord,lem:so_eventuallyEq,lem:coord_unique}
+\end{lemma}
+\begin{proof}
+\(s_m(\hat a)=x\) for all \(m\ge N-1\), so \(s_m(\hat a)\sotends x\)
+(Lemma~\ref{lem:so_eventuallyEq}); Lemma~\ref{lem:coord_unique} gives
+\(a^{x}=\hat a\), and the formula for \(P_m x=s_m(\hat a)\) follows.
+\end{proof}
+
+\begin{lemma}[\(\rho\) of a finite combination is the maximal-function norm]\label{lem:rho_eq_sup}
+\leanname{rho\_eq\_norm\_sup}
+With \(N,a,x\) as in Lemma~\ref{lem:proj_finite} and
+\[
+  v=\bigjoin_{m=0}^{N-1}\Big|\sum_{k=0}^{m} a_k e_k\Big|
+   \qquad\text{(Lean: \((\mathrm{range}\,N).\mathrm{sup}'\,(\lambda m.\,|\textstyle\sum_{k\in\mathrm{range}(m+1)}a_k\act e_k|)\)),}
+\]
+one has \(\rho(x)=\norm{v}\).
+\uses{con:rho,lem:proj_finite,fact:finset,fact:solid,fact:csinf}
+\end{lemma}
+\begin{proof}
+By Lemma~\ref{lem:proj_finite} the family \(\{\abs{P_m x}:m\in\N\}\) equals
+\(\{\,|s_m(a)| : 0\le m\le N-1\,\}\) (values with \(m\ge N-1\) repeat
+\(\abs{x}=|s_{N-1}(a)|\)). Thus \(v\) is its least upper bound
+(Fact~\ref{fact:finset}): \(v\ge0\), \(\abs{P_m x}\le v\) for all \(m\)
+(so \(v\in A(x)\)), and \(v\le u\) for every \(u\in A(x)\). Hence
+\(\rho(x)\le\norm{v}\); and for \(u\in A(x)\), \(v\le u\) gives
+\(\norm{v}\le\norm{u}\) (Fact~\ref{fact:solid}), so \(\norm{v}\le\rho(x)\)
+(Fact~\ref{fact:csinf}). Therefore \(\rho(x)=\norm{v}\).
+\end{proof}
+
+\begin{lemma}[The comparison constant]\label{lem:const}
+\leanname{exists\_const\_rho\_le}
+There is \(C<\infty\) with \(\rho(x)\le C\norm{x}\) for all \(x\in X\).
+\uses{con:Xrho,prop:rho_complete,lem:norm_le_rho,fact:banach}
+\end{lemma}
+\begin{proof}
+The identity \(\iota:\Xrho\to X\) is linear and, by
+Lemma~\ref{lem:norm_le_rho}, satisfies \(\norm{\iota x}=\norm{x}\le\rho(x)\), hence
+is continuous with \(\norm{\iota}\le1\). It is bijective. Since \(\Xrho\) is
+complete (Proposition~\ref{prop:rho_complete}) and \(X\) is Banach, the bounded
+inverse theorem (Fact~\ref{fact:banach}, \texttt{ContinuousLinearEquiv.ofBijective}
+with \(\ker\iota=\bot\), \(\operatorname{range}\iota=\top\)) makes
+\(\iota^{-1}:X\to\Xrho\) continuous. With \(C=\norm{\iota^{-1}}\),
+\(\rho(x)=\norm{\iota^{-1}x}_{\rho}\le C\norm{x}\).
+\end{proof}
+
+\begin{theorem}[Theorem A, \(\sigma\)-order form]\label{thm:main}
+\leanname{theoremA\_sigma\_order\_form (FIXED name, from Showcase\_ThmA.lean)}
+There is \(C<\infty\) such that for every \(N\ge1\) and all scalars
+\(a_0,\dots,a_{N-1}\),
+\[
+  \Big\|\ \bigjoin_{m=0}^{N-1}\Big|\sum_{k=0}^{m} a_k e_k\Big|\ \Big\|
+  \ \le\ C\,\Big\|\sum_{k=0}^{N-1} a_k e_k\Big\| .
+\]
+\uses{lem:const,lem:rho_eq_sup}
+\end{theorem}
+\begin{proof}
+Take \(C\) from Lemma~\ref{lem:const}. Fix \(N,a\) and set
+\(x=\sum_{k=0}^{N-1}a_k e_k\) and \(v\) as in Lemma~\ref{lem:rho_eq_sup}. Then
+\(\norm{v}=\rho(x)\le C\norm{x}\), which is the claim.
+(The spanning hypothesis \((\overline{\operatorname{span}}\,e=\top)\) of the Lean
+statement is not used; see Remark~\ref{rem:hspan}.)
+\end{proof}
+
+\begin{remark}[On the unused spanning hypothesis]\label{rem:hspan}
+The Lean statement carries \((\operatorname{span}_\R(\operatorname{range} e))\).
+\texttt{topologicalClosure}\(=\top\). It plays no role in the proof: everything
+follows from \texttt{IsSigmaOrderBasis} (Definition~\ref{def:basis}), which already
+ranges over all \(x\in X\). Keep it in the signature (to match
+\texttt{Showcase\_ThmA.lean}); it may raise an unused-variable warning only.
+\end{remark}
+
+%======================================================================
+\section{Dependency graph (summary)}\label{sec:dag}
+%======================================================================
+
+Direct predecessors of each result (leaves \(=\) \S\ref{sec:mathlib}). Reading this
+top to bottom is a valid topological order for formalization.
+
+\begin{center}
+\small
+\begin{tabular}{ll}
+\toprule
+Result & Direct \texttt{uses} \\
+\midrule
+\ref{lem:smul_sup_nonneg} \texttt{smul\_sup\_of\_nonneg} & \ref{fact:possmul} \\
+\ref{lem:abs_smul} \texttt{abs\_smul\_vectorLattice} & \ref{lem:smul_sup_nonneg}, \ref{fact:absgroup} \\
+\ref{lem:reg_zero} \texttt{downToZero\_zero} & \ref{def:downto} \\
+\ref{lem:reg_add} \texttt{DownToZero.add} & \ref{def:downto}, \ref{fact:absgroup} \\
+\ref{lem:reg_smul} \texttt{DownToZero.smul} & \ref{def:downto}, \ref{lem:reg_zero}, \ref{fact:possmul} \\
+\ref{lem:diagonal} \texttt{sigmaOrderTendsto\_of\_diagonal} & \ref{def:downto}, \ref{def:sigo}, \ref{lem:reg_add}, \ref{fact:absgroup}, \ref{fact:finset} \\
+\ref{lem:so_eventuallyEq} & \ref{def:sigo}, \ref{lem:reg_zero} \\
+\ref{lem:so_add} \texttt{SigmaOrderTendsto.add} & \ref{def:sigo}, \ref{lem:reg_add}, \ref{fact:absgroup} \\
+\ref{lem:so_smul} \texttt{SigmaOrderTendsto.smul} & \ref{def:sigo}, \ref{lem:reg_smul}, \ref{lem:abs_smul}, \ref{fact:possmul} \\
+\ref{lem:so_bounded} \texttt{.orderBounded} & \ref{def:sigo}, \ref{fact:absgroup}, \ref{fact:finset} \\
+\ref{lem:so_abs_le} \texttt{.abs\_le} & \ref{def:sigo}, \ref{fact:absgroup} \\
+\ref{lem:norm_limit_abs_le} \texttt{abs\_le\_of\_tendsto} & \ref{fact:orderclosed}, \ref{fact:absgroup} \\
+\ref{lem:reg_tail} \texttt{downToZero\_tsum\_tail} & \ref{def:downto}, \ref{fact:series}, \ref{fact:solid} \\
+\ref{con:coord} \texttt{coord, proj} & \ref{def:basis} \\
+\ref{lem:proj_sotends} & \ref{con:coord}, \ref{def:basis} \\
+\ref{lem:coord_unique} & \ref{con:coord}, \ref{def:basis} \\
+\ref{lem:coord_add} / \ref{lem:coord_smul} & \ref{lem:proj_sotends}, \ref{lem:so_add}/\ref{lem:so_smul}, \ref{lem:coord_unique} \\
+\ref{lem:proj_linear} & \ref{lem:coord_add}, \ref{lem:coord_smul} \\
+\ref{lem:e_indep} & \ref{con:coord}, \ref{lem:so_eventuallyEq}, \ref{lem:coord_unique} \\
+\ref{con:rho} \texttt{rho} & \ref{con:coord} \\
+\ref{lem:rho_wd} & \ref{con:rho}, \ref{lem:proj_sotends}, \ref{lem:so_bounded}, \ref{fact:csinf} \\
+\ref{lem:norm_le_rho} & \ref{con:rho}, \ref{lem:proj_sotends}, \ref{lem:so_abs_le}, \ref{fact:solid}, \ref{fact:csinf} \\
+\ref{lem:rho_approx} & \ref{con:rho}, \ref{lem:rho_wd}, \ref{fact:csinf} \\
+\ref{lem:rho_smul} & \ref{con:rho}, \ref{lem:proj_linear}, \ref{lem:abs_smul}, \ref{fact:possmul} \\
+\ref{lem:rho_add} & \ref{con:rho}, \ref{lem:proj_linear}, \ref{lem:rho_approx}, \ref{fact:absgroup}, \ref{fact:csinf} \\
+\ref{lem:rho_zero} & \ref{con:rho}, \ref{lem:norm_le_rho} \\
+\ref{con:Xrho} \texttt{Xrho} & \ref{lem:rho_smul}, \ref{lem:rho_add}, \ref{lem:rho_zero}, \ref{fact:banach} \\
+\ref{lem:tower_eq_proj} & \ref{lem:e_indep}, \ref{lem:coord_unique}, \ref{fact:findim} \\
+\ref{lem:rho_series} & \ref{con:rho}, \ref{lem:rho_approx}, \ref{lem:norm_le_rho}, \ref{lem:reg_tail}, \ref{lem:reg_add}, \ref{lem:proj_sotends}, \ref{lem:proj_linear}, \ref{lem:norm_limit_abs_le}, \ref{lem:diagonal}, \ref{lem:tower_eq_proj}, \ref{fact:series}, \ref{fact:findim} \\
+\ref{prop:rho_complete} & \ref{con:Xrho}, \ref{lem:rho_series}, \ref{fact:completecrit} \\
+\ref{lem:proj_finite} & \ref{con:coord}, \ref{lem:so_eventuallyEq}, \ref{lem:coord_unique} \\
+\ref{lem:rho_eq_sup} & \ref{con:rho}, \ref{lem:proj_finite}, \ref{fact:finset}, \ref{fact:solid}, \ref{fact:csinf} \\
+\ref{lem:const} & \ref{con:Xrho}, \ref{prop:rho_complete}, \ref{lem:norm_le_rho}, \ref{fact:banach} \\
+\ref{thm:main} \texttt{theoremA\_sigma\_order\_form} & \ref{lem:const}, \ref{lem:rho_eq_sup} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%======================================================================
+\section{Suggested split into Lean files}\label{sec:files}
+%======================================================================
+
+A layout mirroring the sections above. Import order is top-to-bottom; every file
+imports \texttt{Mathlib} (or the relevant sub-imports) plus the files above it.
+The three core definitions and the final theorem \emph{must} match
+\texttt{Showcase\_ThmA.lean} verbatim; place them in \texttt{Defs.lean} and
+\texttt{MaximalInequality.lean} respectively so the \texttt{Showcase} statement
+type-checks unchanged against this development.
+
+\begin{center}
+\small
+\begin{tabular}{lll}
+\toprule
+File & Contents (blocks) & Notes \\
+\midrule
+\texttt{ThmA/Prelim/AbsSmul.lean}
+  & \ref{lem:smul_sup_nonneg}, \ref{lem:abs_smul}
+  & the only new theory (Remark~\ref{rem:gap}) \\
+\texttt{ThmA/Defs.lean}
+  & \ref{def:downto}, \ref{def:sigo}, \ref{def:basis}, \ref{con:coord}
+  & core defs \emph{verbatim} from Showcase \\
+\texttt{ThmA/Regulators.lean}
+  & \ref{lem:reg_zero}, \ref{lem:reg_add}, \ref{lem:reg_smul}, \ref{lem:diagonal}
+  & needs \texttt{AbsSmul}? no; \texttt{Defs} only \\
+\texttt{ThmA/SigmaOrder.lean}
+  & \ref{lem:so_eventuallyEq}--\ref{lem:reg_tail}
+  & Lemma 1 refactored; uses \texttt{AbsSmul}, \texttt{Regulators} \\
+\texttt{ThmA/Coordinates.lean}
+  & \ref{lem:proj_sotends}--\ref{lem:e_indep}
+  & Lemma 2 refactored \\
+\texttt{ThmA/AuxNorm.lean}
+  & \ref{con:rho}--\ref{con:Xrho}
+  & Lemma 3 + type synonym \(\Xrho\) \\
+\texttt{ThmA/Complete.lean}
+  & \ref{lem:tower_eq_proj}, \ref{lem:rho_series}, \ref{prop:rho_complete}
+  & Proposition 4 (heaviest file) \\
+\texttt{ThmA/MaximalInequality.lean}
+  & \ref{lem:proj_finite}, \ref{lem:rho_eq_sup}, \ref{lem:const}, \ref{thm:main}
+  & final theorem \emph{verbatim} from Showcase \\
+\texttt{ThmA.lean}
+  & (re-export) & imports all of the above \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Notes for the formalization agent.}
+\begin{itemize}[leftmargin=1.5em]
+\item Start with \texttt{AbsSmul.lean}: it unblocks \ref{lem:so_smul} and
+      \ref{lem:rho_smul} and is the only place needing invention.
+\item \texttt{Complete.lean} is the critical path; \ref{lem:rho_series} (six steps)
+      and \ref{lem:tower_eq_proj} carry essentially all the difficulty. Formalize
+      \ref{lem:tower_eq_proj} against Mathlib's \texttt{Basis}/\texttt{LinearIndependent}
+      API first.
+\item For \(\Xrho\) prefer building an \texttt{AddGroupNorm} bundle and calling
+      \texttt{AddGroupNorm.toNormedAddCommGroup}, then supply
+      \texttt{NormedSpace}\ \(\R\ \Xrho\) via \(\rho(\alpha\act x)=\abs{\alpha}\rho(x)\)
+      (\ref{lem:rho_smul}); transport the \(\R\)-module structure through the type synonym.
+\item \(\rho\) is best defined with \texttt{sInf} over \(\{\norm{u}\mid u\in A(x)\}\);
+      keep \ref{lem:rho_wd} (nonempty + bdd-below) adjacent so \texttt{csInf} lemmas fire.
+\item Do \emph{not} attempt \texttt{hspan} (Remark~\ref{rem:hspan}); it is inert.
+\end{itemize}
+
+\end{document}

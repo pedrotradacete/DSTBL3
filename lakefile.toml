@@ -1,0 +1,26 @@
+name = "DSTBL3"
+version = "0.1.0"
+defaultTargets = ["DSTBL3", "Lean_Code"]
+
+[[require]]
+name = "banLat"
+git = "https://github.com/davidmunozlahoz/banlat.git"
+rev = "a190b2011f720742badca9baaa1bd4ab93f2d438"
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.34.1"
+
+[[lean_lib]]
+name = "DSTBL3"
+globs = ["DSTBL3", "ThmBC.BasicPi11", "ThmBC.ThmBC", "ThmBC.Tree.+", "ThmBC.Lower.+", "ThmBC.Upper.+"]
+
+[[lean_lib]]
+name = "Lean_Code"
+srcDir = "TheoremA"
+globs = ["Lean_Code", "Lean_Code.+"]
+
+[[lean_exe]]
+name = "dstbl3"
+root = "Main"
